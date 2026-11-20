@@ -1,0 +1,33 @@
+# Local services for development. Spring Boot's Docker Compose support starts
+# them when you run the app (./gradlew bootRun) and stops them when it stops.
+#
+# Postgres uses a container-only port: Docker picks a free host port and
+# Spring Boot reads it for you.
+# Keycloak uses a FIXED host port, because the app has to know its address in
+# advance (the JWT issuer URL).
+name: shoplite-production-apis
+
+services:
+  postgres:
+    image: 'postgres:18.7-alpine'
+    environment:
+      - 'POSTGRES_DB=shoplite'
+      - 'POSTGRES_USER=shoplite'
+      # Development only. Never reuse this password anywhere real.
+      - 'POSTGRES_PASSWORD=shoplite-dev-only'
+    ports:
+      - '5432'
+
+  # Issues the JWT access tokens. Imports the "shoplite" realm (clients, roles,
+  # test users) from ./keycloak on first start. Admin console: http://localhost:18080
+  keycloak:
+    image: 'quay.io/keycloak/keycloak:26.8.2'
+    command: ['start-dev', '--import-realm']
+    environment:
+      # Development only. These are fake credentials for a local container.
+      - 'KC_BOOTSTRAP_ADMIN_USERNAME=admin'
+      - 'KC_BOOTSTRAP_ADMIN_PASSWORD=admin-dev-only'
+    volumes:
+      - './keycloak:/opt/keycloak/data/import:ro'
+    ports:
+      - '18080:8080'

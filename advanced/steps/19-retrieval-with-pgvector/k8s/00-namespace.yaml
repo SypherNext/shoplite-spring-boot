@@ -1,0 +1,5 @@
+# Everything ShopLite runs in its own namespace: easy to list, easy to delete.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shoplite

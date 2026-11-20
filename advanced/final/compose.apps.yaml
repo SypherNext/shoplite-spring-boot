@@ -1,0 +1,94 @@
+# The ShopLite services themselves, as containers built with ./gradlew bootBuildImage.
+# Run them together with the infrastructure:
+#   docker compose -f compose.yaml -f compose.apps.yaml up -d
+# Inside the compose network the services find each other by name (catalog-service, kafka, ...),
+# so Eureka and the config server are not needed here: both are switched off.
+x-shoplite-common: &common
+  SPRING_PROFILES_ACTIVE: prod
+  # The memory calculator reserves stack space for 250 threads in a servlet app, which left the catalog
+  # a 22 MB heap in 768 MB. Requests run on virtual threads, so few platform threads exist.
+  BPL_JVM_THREAD_COUNT: '50'
+  EUREKA_CLIENT_ENABLED: 'false'
+  SPRING_CLOUD_CONFIG_ENABLED: 'false'
+  # Plain DNS names instead of Spring Cloud LoadBalancer and Eureka.
+  SPRING_CLOUD_LOADBALANCER_ENABLED: 'false'
+  # Tokens are issued for http://localhost:18180 (that is where curl gets them), so that stays the
+  # expected issuer. The signing keys are fetched from inside the network.
+  JWT_ISSUER_URI: http://localhost:18180/realms/shoplite
+  SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://keycloak:8080/realms/shoplite/protocol/openid-connect/certs
+  CORS_ALLOWED_ORIGINS: http://localhost:5173
+  DATABASE_USERNAME: shoplite
+  # Development only. Never reuse this password anywhere real.
+  DATABASE_PASSWORD: shoplite-dev-only
+  KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+  OTLP_TRACES_ENDPOINT: http://grafana-lgtm:4318/v1/traces
+  # The config server set this to 1.0 (lesson 9); without it Spring Boot records 10% of the traces.
+  # Every trace is fine for a demo; real traffic usually needs far less.
+  MANAGEMENT_TRACING_SAMPLING_PROBABILITY: '1.0'
+  OTLP_METRICS_ENDPOINT: http://grafana-lgtm:4318/v1/metrics
+  OTLP_LOGS_ENDPOINT: http://grafana-lgtm:4318/v1/logs
+
+services:
+  catalog-service:
+    image: 'shoplite/catalog-service:0.1.0'
+    # The buildpack's memory calculator sizes the heap from this limit. Without one, it uses all of
+    # Docker's memory for every container.
+    mem_limit: 768m
+    environment:
+      <<: *common
+      DATABASE_URL: jdbc:postgresql://postgres:5432/catalog
+      REDIS_URL: redis://redis:6379
+    ports:
+      - '18281:8281'
+    depends_on: [postgres, redis, kafka, keycloak]
+
+  order-service:
+    image: 'shoplite/order-service:0.1.0'
+    mem_limit: 768m
+    environment:
+      <<: *common
+      DATABASE_URL: jdbc:postgresql://postgres:5432/orders
+      RABBITMQ_ADDRESSES: amqp://shoplite:shoplite-dev-only@rabbitmq:5672
+      CATALOG_URL: http://catalog-service:8281
+      SPRING_GRPC_CLIENT_CHANNEL_CATALOG_TARGET: static://catalog-service:9281
+      PAYMENT_PROVIDER_URL: http://payment-provider:8080
+    ports:
+      - '18282:8282'
+    depends_on: [postgres, kafka, rabbitmq, keycloak, catalog-service]
+
+  review-service:
+    image: 'shoplite/review-service:0.1.0'
+    mem_limit: 768m
+    environment:
+      <<: *common
+      DATABASE_URL: jdbc:postgresql://postgres:5432/reviews
+      R2DBC_URL: r2dbc:postgresql://postgres:5432/reviews
+      CATALOG_URL: http://catalog-service:8281
+    ports:
+      - '18283:8283'
+    depends_on: [postgres, keycloak, catalog-service]
+
+  assistant-service:
+    image: 'shoplite/assistant-service:0.1.0'
+    mem_limit: 768m
+    environment:
+      <<: *common
+      DATABASE_URL: jdbc:postgresql://postgres:5432/assistant
+      CATALOG_URL: http://catalog-service:8281
+      OLLAMA_URL: http://ollama:11434
+    ports:
+      - '18284:8284'
+    depends_on: [postgres, ollama, keycloak, catalog-service]
+
+  gateway:
+    image: 'shoplite/gateway:0.1.0'
+    mem_limit: 768m
+    environment:
+      <<: *common
+      SHOPLITE_SERVICES_CATALOG: http://catalog-service:8281
+      SHOPLITE_SERVICES_ORDERS: http://order-service:8282
+      SHOPLITE_SERVICES_REVIEWS: http://review-service:8283
+      SHOPLITE_SERVICES_ASSISTANT: http://assistant-service:8284
+    ports:
+      - '18280:8280'
+    depends_on: [catalog-service, order-service, review-service, assistant-service]

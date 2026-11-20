@@ -1,0 +1,45 @@
+# Local services for development. Spring Boot's Docker Compose support starts
+# them when you run the app (./gradlew bootRun) and stops them when it stops.
+#
+# Postgres uses a container-only port: Docker picks a free host port and
+# Spring Boot reads it for you.
+# Keycloak and the payment stub use FIXED host ports, because the app has to know
+# their address in advance (the JWT issuer URL and the payment base URL).
+name: shoplite-production-apis
+
+services:
+  postgres:
+    image: 'postgres:18.7-alpine'
+    environment:
+      - 'POSTGRES_DB=shoplite'
+      - 'POSTGRES_USER=shoplite'
+      # Development only. Never reuse this password anywhere real.
+      - 'POSTGRES_PASSWORD=shoplite-dev-only'
+    ports:
+      - '5432'
+
+  # Issues the JWT access tokens. Imports the "shoplite" realm (clients, roles,
+  # test users) from ./keycloak on first start. Admin console: http://localhost:18080
+  keycloak:
+    image: 'quay.io/keycloak/keycloak:26.8.2'
+    command: ['start-dev', '--import-realm']
+    environment:
+      # Development only. These are fake credentials for a local container.
+      - 'KC_BOOTSTRAP_ADMIN_USERNAME=admin'
+      - 'KC_BOOTSTRAP_ADMIN_PASSWORD=admin-dev-only'
+    volumes:
+      - './keycloak:/opt/keycloak/data/import:ro'
+    ports:
+      - '18080:8080'
+
+  # A stand-in for a real payment provider: WireMock answers with canned JSON
+  # from ./payment-stub/mappings.
+  payment-provider:
+    image: 'wiremock/wiremock:3.13.2-alpine'
+    # --disable-http2-plain: the JDK HTTP client asks plain-HTTP servers to upgrade to HTTP/2,
+    # and that upgrade fails against WireMock ("RST_STREAM" errors). HTTP/1.1 only.
+    command: ['--global-response-templating', '--disable-http2-plain']
+    volumes:
+      - './payment-stub:/home/wiremock:ro'
+    ports:
+      - '18090:8080'

@@ -1,0 +1,81 @@
+{
+  "realm": "shoplite",
+  "displayName": "ShopLite (local development)",
+  "enabled": true,
+  "sslRequired": "none",
+  "accessTokenLifespan": 900,
+  "roles": {
+    "realm": [
+      { "name": "CUSTOMER", "description": "Can browse and place orders" },
+      { "name": "ADMIN", "description": "Can manage the catalog and all orders" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "shoplite-cli",
+      "name": "ShopLite command line (curl, tests)",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "realm roles as roles claim",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "shoplite-api audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "shoplite-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "email": "alice@shoplite.test",
+      "firstName": "Alice",
+      "lastName": "Customer",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "alice-dev-pass", "temporary": false }],
+      "realmRoles": ["CUSTOMER"]
+    },
+    {
+      "username": "bob",
+      "email": "bob@shoplite.test",
+      "firstName": "Bob",
+      "lastName": "Customer",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "bob-dev-pass", "temporary": false }],
+      "realmRoles": ["CUSTOMER"]
+    },
+    {
+      "username": "olivia",
+      "email": "olivia@shoplite.test",
+      "firstName": "Olivia",
+      "lastName": "Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "olivia-dev-pass", "temporary": false }],
+      "realmRoles": ["ADMIN"]
+    }
+  ]
+}

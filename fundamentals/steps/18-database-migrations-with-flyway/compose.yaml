@@ -1,0 +1,18 @@
+# Local services for development. Spring Boot's Docker Compose support starts
+# this file when you run the app and stops it when the app stops.
+# Ports are container-only ('5432'), so Docker picks a free host port and
+# Spring Boot reads it for you. Nothing clashes with other databases you run.
+
+# Without a name, Compose uses the folder name ("final") for containers and networks.
+name: shoplite-fundamentals
+
+services:
+  postgres:
+    image: 'postgres:18.7-alpine'
+    environment:
+      - 'POSTGRES_DB=shoplite'
+      - 'POSTGRES_USER=shoplite'
+      # Development only. Never reuse this password anywhere real.
+      - 'POSTGRES_PASSWORD=shoplite-dev-only'
+    ports:
+      - '5432'

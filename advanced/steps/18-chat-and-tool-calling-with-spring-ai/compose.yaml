@@ -1,0 +1,100 @@
+# Shared infrastructure for every ShopLite service. Start it once, before the services:
+#   docker compose up -d
+# Stop and delete everything (data included) with:
+#   docker compose down -v
+#
+# Several services use these containers, so each one listens on a FIXED host port in the
+# 18xxx range. The services read the addresses from their application.properties.
+name: shoplite-advanced
+
+services:
+  # One PostgreSQL server with one database per service (see infra/postgres/init.sql).
+  postgres:
+    image: 'postgres:18.7-alpine'
+    environment:
+      - 'POSTGRES_DB=shoplite'
+      - 'POSTGRES_USER=shoplite'
+      # Development only. Never reuse this password anywhere real.
+      - 'POSTGRES_PASSWORD=shoplite-dev-only'
+    volumes:
+      - './infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro'
+    ports:
+      - '18232:5432'
+
+  redis:
+    image: 'redis:8.8.4-alpine'
+    ports:
+      - '18279:6379'
+
+  kafka:
+    image: 'apache/kafka:4.4.0'
+    environment:
+      - 'KAFKA_NODE_ID=1'
+      - 'KAFKA_PROCESS_ROLES=broker,controller'
+      # HOST: for apps on your computer. DOCKER: for other containers in this compose project.
+      - 'KAFKA_LISTENERS=HOST://:9092,DOCKER://:19092,CONTROLLER://:9093'
+      - 'KAFKA_ADVERTISED_LISTENERS=HOST://localhost:18292,DOCKER://kafka:19092'
+      - 'KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=HOST:PLAINTEXT,DOCKER:PLAINTEXT,CONTROLLER:PLAINTEXT'
+      - 'KAFKA_INTER_BROKER_LISTENER_NAME=DOCKER'
+      - 'KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER'
+      - 'KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093'
+      - 'KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1'
+      - 'KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1'
+      - 'KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1'
+      # Topics are created on purpose by the services (NewTopic beans), never by accident.
+      - 'KAFKA_AUTO_CREATE_TOPICS_ENABLE=false'
+    ports:
+      - '18292:9092'
+
+  rabbitmq:
+    image: 'rabbitmq:4.4.0-management-alpine'
+    environment:
+      - 'RABBITMQ_DEFAULT_USER=shoplite'
+      - 'RABBITMQ_DEFAULT_PASS=shoplite-dev-only'
+    ports:
+      - '18272:5672'
+      # Management UI: http://localhost:18273 (shoplite / shoplite-dev-only)
+      - '18273:15672'
+
+  # Issues the JWT access tokens (realm "shoplite" from infra/keycloak). Admin console: http://localhost:18180
+  keycloak:
+    image: 'quay.io/keycloak/keycloak:26.8.2'
+    command: ['start-dev', '--import-realm']
+    environment:
+      - 'KC_BOOTSTRAP_ADMIN_USERNAME=admin'
+      - 'KC_BOOTSTRAP_ADMIN_PASSWORD=admin-dev-only'
+    volumes:
+      - './infra/keycloak:/opt/keycloak/data/import:ro'
+    ports:
+      - '18180:8080'
+
+  # The stand-in payment provider (WireMock), HTTP/1.1 only.
+  payment-provider:
+    image: 'wiremock/wiremock:3.13.2-alpine'
+    command: ['--global-response-templating', '--disable-http2-plain']
+    volumes:
+      - './infra/payment-stub:/home/wiremock:ro'
+    ports:
+      - '18190:8080'
+
+  # Grafana, Tempo, Loki and Prometheus in one container. Grafana: http://localhost:18300
+  grafana-lgtm:
+    image: 'grafana/otel-lgtm:0.41.0'
+    ports:
+      - '18300:3000'
+      - '18317:4317'
+      - '18318:4318'
+
+  # Ollama runs language models locally (lessons 18 to 20). The models live in a named volume,
+  # so they survive container restarts. "docker compose down -v" deletes them too.
+  ollama:
+    image: 'ollama/ollama:0.40.16'
+    container_name: shoplite-ollama
+    volumes:
+      - 'ollama-models:/root/.ollama'
+    ports:
+      - '18434:11434'
+
+volumes:
+  ollama-models:
+    name: shoplite-ollama-models

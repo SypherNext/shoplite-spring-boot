@@ -1,0 +1,15 @@
+{
+  "priority": 5,
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/charges"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": {
+      "paymentId": "pay_{{randomValue length=12 type='ALPHANUMERIC'}}",
+      "status": "APPROVED"
+    }
+  }
+}

@@ -1,0 +1,98 @@
+# Local services for development. Spring Boot's Docker Compose support starts
+# them when you run the app (./gradlew bootRun) and stops them when it stops.
+#
+# Postgres, Redis and Grafana LGTM use container-only ports: Docker picks a free
+# host port and Spring Boot reads it for you.
+# Keycloak and the payment stub use FIXED host ports, because the app has to know
+# their address in advance (the JWT issuer URL and the payment base URL).
+# The advanced course moves them to 18180 and 18190 (course 2 used 18080 and 18090),
+# so both stacks can run on the same computer.
+name: shoplite-advanced
+
+services:
+  postgres:
+    image: 'postgres:18.7-alpine'
+    environment:
+      - 'POSTGRES_DB=shoplite'
+      - 'POSTGRES_USER=shoplite'
+      # Development only. Never reuse this password anywhere real.
+      - 'POSTGRES_PASSWORD=shoplite-dev-only'
+    ports:
+      - '5432'
+
+  redis:
+    image: 'redis:8.8.4-alpine'
+    ports:
+      - '6379'
+
+  # Issues the JWT access tokens. Imports the "shoplite" realm (clients, roles,
+  # test users) from ./keycloak on first start. Admin console: http://localhost:18180
+  keycloak:
+    image: 'quay.io/keycloak/keycloak:26.8.2'
+    command: ['start-dev', '--import-realm']
+    environment:
+      # Development only. These are fake credentials for a local container.
+      - 'KC_BOOTSTRAP_ADMIN_USERNAME=admin'
+      - 'KC_BOOTSTRAP_ADMIN_PASSWORD=admin-dev-only'
+    volumes:
+      - './keycloak:/opt/keycloak/data/import:ro'
+    ports:
+      - '18180:8080'
+
+  # A stand-in for a real payment provider: WireMock answers with canned JSON
+  # from ./payment-stub/mappings.
+  payment-provider:
+    image: 'wiremock/wiremock:3.13.2-alpine'
+    # --disable-http2-plain: the JDK HTTP client asks plain-HTTP servers to upgrade to HTTP/2,
+    # and that upgrade fails against WireMock ("RST_STREAM" errors). HTTP/1.1 only.
+    command: ['--global-response-templating', '--disable-http2-plain']
+    volumes:
+      - './payment-stub:/home/wiremock:ro'
+    ports:
+      - '18190:8080'
+
+  # Grafana, Tempo, Loki and Prometheus in one container. Receives traces,
+  # metrics and logs over OTLP. Find the Grafana port with:
+  #   docker compose port grafana-lgtm 3000
+  grafana-lgtm:
+    image: 'grafana/otel-lgtm:0.41.0'
+    ports:
+      - '3000'
+      - '4317'
+      - '4318'
+
+  # RabbitMQ with the management web UI. Container-only ports: Spring Boot finds the AMQP port
+  # (5672) by itself. Find the UI with: docker compose port rabbitmq 15672
+  # The default "guest" user may only log in from inside the container, so a dev-only user is set.
+  rabbitmq:
+    image: 'rabbitmq:4.4.0-management-alpine'
+    environment:
+      - 'RABBITMQ_DEFAULT_USER=shoplite'
+      # Development only. Never reuse this password anywhere real.
+      - 'RABBITMQ_DEFAULT_PASS=shoplite-dev-only'
+    ports:
+      - '5672'
+      - '15672'
+
+  # One Kafka broker in KRaft mode (no ZooKeeper): this node is both broker and controller.
+  # FIXED host port 18292: a Kafka client first asks the broker for its address and then
+  # connects to the address the broker advertises. That advertised address must be known
+  # before the container starts, so Docker cannot pick a random port here.
+  kafka:
+    image: 'apache/kafka:4.4.0'
+    environment:
+      - 'KAFKA_NODE_ID=1'
+      - 'KAFKA_PROCESS_ROLES=broker,controller'
+      # HOST: for apps on your computer. DOCKER: for other containers in this compose project.
+      - 'KAFKA_LISTENERS=HOST://:9092,DOCKER://:19092,CONTROLLER://:9093'
+      - 'KAFKA_ADVERTISED_LISTENERS=HOST://localhost:18292,DOCKER://kafka:19092'
+      - 'KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=HOST:PLAINTEXT,DOCKER:PLAINTEXT,CONTROLLER:PLAINTEXT'
+      - 'KAFKA_INTER_BROKER_LISTENER_NAME=DOCKER'
+      - 'KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER'
+      - 'KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093'
+      # A single broker cannot keep 3 copies of the internal topics.
+      - 'KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1'
+      - 'KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1'
+      - 'KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1'
+    ports:
+      - '18292:9092'

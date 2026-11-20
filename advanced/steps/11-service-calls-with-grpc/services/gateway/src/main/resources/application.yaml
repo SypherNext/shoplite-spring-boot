@@ -1,0 +1,76 @@
+server:
+  port: 8280
+
+spring:
+  application:
+    name: gateway
+  # Settings from the config server win over this file (it is optional: the defaults below still work).
+  config:
+    import: optional:configserver:http://localhost:8288
+  profiles:
+    default: dev
+  threads:
+    virtual:
+      enabled: true
+  cloud:
+    gateway:
+      server:
+        webmvc:
+          routes:
+            # Customers and Swagger UI only ever see :8280. Each route forwards matching paths unchanged.
+            - id: catalog
+              uri: ${shoplite.services.catalog}
+              predicates:
+                - Path=/api/products/**,/api/categories/**,/api/shop
+            - id: orders
+              uri: ${shoplite.services.orders}
+              predicates:
+                - Path=/api/orders/**,/api/customers/**,/api/admin/**
+            # The services' OpenAPI documents, under /docs/<service>/... for the shared Swagger UI.
+            - id: catalog-docs
+              uri: ${shoplite.services.catalog}
+              predicates:
+                - Path=/docs/catalog/**
+              filters:
+                - StripPrefix=2
+            - id: orders-docs
+              uri: ${shoplite.services.orders}
+              predicates:
+                - Path=/docs/orders/**
+              filters:
+                - StripPrefix=2
+            # No route matches /internal/**: service-to-service endpoints are not reachable from outside.
+
+# Where the services run. In Kubernetes (lesson 16) these become Service names.
+shoplite:
+  services:
+    catalog: http://localhost:8281
+    orders: http://localhost:8282
+
+# One Swagger UI for the whole shop: a dropdown with each service's document, fetched through the routes above.
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    urls-primary-name: Catalog
+    urls:
+      - name: Catalog
+        url: /docs/catalog/v3/api-docs/catalog
+      - name: Orders 1.0
+        url: /docs/orders/v3/api-docs/v1
+      - name: Orders 2.0
+        url: /docs/orders/v3/api-docs/v2
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: http://localhost:18318/v1/traces
+  otlp:
+    metrics:
+      export:
+        url: http://localhost:18318/v1/metrics

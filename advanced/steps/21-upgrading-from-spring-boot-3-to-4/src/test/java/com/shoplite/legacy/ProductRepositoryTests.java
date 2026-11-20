@@ -1,0 +1,32 @@
+package com.shoplite.legacy;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+
+@DataJpaTest
+@Testcontainers
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+class ProductRepositoryTests {
+
+    @Container
+    @ServiceConnection
+    static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.7-alpine");
+
+    @Autowired
+    ProductRepository products;
+
+    @Test
+    void findsByPartOfTheName() {
+        assertThat(products.findByNameContainingIgnoreCaseOrderByName("BOTTLE"))
+                .extracting(Product::getName).containsExactly("Steel Water Bottle");
+    }
+
+}

@@ -1,0 +1,52 @@
+package com.shoplite.notifications;
+
+import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
+import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
+
+import java.time.Duration;
+import java.util.UUID;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.simple.JdbcClient;
+
+import com.shoplite.IntegrationTestSupport;
+import com.shoplite.TestJwts;
+
+/** The Event Publication Registry records the OrderPaid event and completes it once the listener ran. */
+class EventPublicationTests extends IntegrationTestSupport {
+
+    @Autowired
+    JdbcClient jdbc;
+
+    @Test
+    void theWebhookListenerCompletesItsPublication() {
+        paymentProvider.resetAll();
+        paymentProvider.stubFor(post(urlPathEqualTo("/v1/charges")).willReturn(okJson("""
+                {"paymentId": "pay_registry_1", "status": "APPROVED"}
+                """)));
+
+        Integer orderId = json(mvc.post().uri("/api/orders")
+                .with(TestJwts.customer("alice"))
+                .header("Idempotency-Key", UUID.randomUUID().toString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"lines": [{"productId": 4, "quantity": 1}], "notifyUrl": "https://shop.invalid/hooks"}
+                        """)
+                .exchange(), "$.id");
+
+        await().atMost(Duration.ofSeconds(15)).untilAsserted(() ->
+                assertThat(jdbc.sql("""
+                        select status from event_publication
+                        where listener_id like '%OrderPaidWebhookListener%'
+                          and serialized_event like :order""")
+                        .param("order", "%\"orderId\":" + orderId + ",%")
+                        .query(String.class).list())
+                        .containsExactly("COMPLETED"));
+    }
+
+}

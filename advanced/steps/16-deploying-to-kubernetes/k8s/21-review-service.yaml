@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: review-service
+  namespace: shoplite
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: review-service
+  template:
+    metadata:
+      labels:
+        app: review-service
+    spec:
+      containers:
+        - name: review-service
+          image: shoplite/review-service:0.1.0
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: shoplite-shared
+            - secretRef:
+                name: shoplite-database
+          env:
+            - name: DATABASE_URL
+              value: jdbc:postgresql://postgres:5432/reviews
+            - name: R2DBC_URL
+              value: r2dbc:postgresql://postgres:5432/reviews
+            - name: CATALOG_URL
+              value: http://catalog-service:8281
+          ports:
+            - name: http
+              containerPort: 8283
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 768Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: review-service
+  namespace: shoplite
+spec:
+  selector:
+    app: review-service
+  ports:
+    - name: http
+      port: 8283

@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: shoplite
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+    spec:
+      containers:
+        - name: gateway
+          image: shoplite/gateway:0.1.0
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: shoplite-shared
+          env:
+            # A Service name resolves to all ready pods behind it: Kubernetes does the load balancing.
+            - name: SHOPLITE_SERVICES_CATALOG
+              value: http://catalog-service:8281
+            - name: SHOPLITE_SERVICES_ORDERS
+              value: http://order-service:8282
+            - name: SHOPLITE_SERVICES_REVIEWS
+              value: http://review-service:8283
+          ports:
+            - name: http
+              containerPort: 8280
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              memory: 768Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: shoplite
+spec:
+  selector:
+    app: gateway
+  ports:
+    - name: http
+      port: 8280

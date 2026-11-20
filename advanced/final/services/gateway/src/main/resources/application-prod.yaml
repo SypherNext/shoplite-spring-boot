@@ -1,0 +1,19 @@
+# Production: the services switch their API documents off (springdoc disabled in their prod profiles),
+# so the gateway's shared Swagger UI would only show errors. It is switched off here too.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+# Where traces and metrics go, from the environment like in the other services.
+management:
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTLP_TRACES_ENDPOINT}
+  otlp:
+    metrics:
+      export:
+        url: ${OTLP_METRICS_ENDPOINT}
